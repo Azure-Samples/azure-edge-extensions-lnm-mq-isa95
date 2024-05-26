@@ -25,25 +25,25 @@ The ISA-95 standard is structured into distinct levels:
 
 Contoso, a global manufacturing company, has implemented ISA-95 using Azure IoT Operations. Their architecture aligns with the ISA-95 levels:
 
-- **Level 5 (Global Corporation)**: Data aggregation, analysis, forecasting, and business decision-making. Some data from this layer, must to be available in bottom layers, like **Level 3** for immediate actions.
+- **Level 5 (Global Corporation)**: Data aggregation, analysis, forecasting, and business decision-making. Some data from this layer is made available in lower layers, like Level 3, for immediate action.
 - **Level 4 (Regional Management)**: Regional production planning and coordination.
-- **Level 2 & 3 (Site Operations)**: Azure IoT Edge devices collect and aggregate data from local sensors and machines. These data is stored inside the local MQ Broker. This data must reach the **Level 5** for business driving purposes.
+- **Levels 2 & 3 (Site Operations)**: Azure IoT Edge devices collect and aggregate data from local sensors and machines, storing it in the local MQ Broker. This data is also sent to Level 5 for business purposes.
 
-Azure IOT Operations bundles many components, like the Azure IoT MQ: aka AIO MQ features an enterprise-grade, standards-compliant MQTT Broker that is scalable, highly available and Kubernetes-native. It provides the messaging plane for Azure IoT Operations, enables bi-directional edge/cloud communication and powers event-driven applications at the edge.
+Azure IoT Operations includes the Azure IoT MQ, a scalable, Kubernetes-native MQTT Broker that provides the messaging plane for event-driven applications.
 
-Contoso Corp, will use on the Azure IoT Operations MQ as an MQTT Broker. Then to implement the MQTT Data duplication between MQTT Brokers in different layers, Contoso will rely on the MQTT Bridge component from AIO MQ.
+Contoso uses Azure IoT MQ as an MQTT Broker and relies on the MQTT Bridge component to duplicate MQTT data between brokers in different layers.
 
-Contoso Corp has an additional requirement: it has a Kafka Broker deployed in another cloud, storing business decisions that need to be applied to production lines. This data needs to reach Layer 2 & 3.
+Contoso has an additional requirement: a Kafka Broker in another cloud stores business decisions that need to be applied to production lines. This data needs to reach Layers 2 & 3.
 
 ## Scenario
 
 ### Kafka Bridging scenario
 
-The first part of the document covers a setup for deploying a Kafka Connector component from AIO MQ, to grab the business decisions from the Kafka Broker hosted on the second cloud. The Kafka Connector will make the messages available in the `enterprise/feedback` topic in L4 MQTT Broker, to be used later by the MQTT Bridge.
+A Kafka Connector component from AIO MQ grabs business decisions from the Kafka Broker and makes them available in the `enterprise/feedback` topic on the Level 4 MQTT Broker for later use by the MQTT Bridge.
 
 ### MQTT Bridging scenario
 
-The second part of the document describes a setup for deploying MQTT on L4 and L3 and briding MQTT messages between L3 and L4 brokers. When an MQTT client publishes a message in the `node1` topic in L3 MQTT Broker, the MQTT Bridge will duplicate the message into the `enterprise/site1/node1` in the L4 MQTT Broker. And when a message is inserted in the `enterprise/feedback` topic in L4 MQTT Broker, the MQTT Bridge will duplicate the message into the `incoming-feedback` in the L3 MQTT Broker.
+MQTT Bridge duplicates messages between the Level 3 and Level 4 brokers. When a message is published to the `node1` topic in the Level 3 MQTT Broker, it's duplicated to `enterprise/site1/node1` in the Level 4 MQTT Broker. Messages inserted into `enterprise/feedback` in the Level 4 broker are duplicated to `incoming-feedback` in the Level 3 broker.
 
 The full scenario covered in this sample is described in this sequence diagram:
 
@@ -53,11 +53,12 @@ The full scenario covered in this sample is described in this sequence diagram:
 
 This sample requires:
 
-- Installing Azure IoT Operations on an ISA95 architecture
-- Access to a Kafka Broker:
-  - Kafka Broker URL and SASL Plain credentials are needed
+- Azure IoT Operations installed on an ISA-95 architecture. The full installation guideline is [available here](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-configure-aks-edge-essentials-layered-network).
+- Access to a Kafka Broker with URL and SASL Plain credentials.
 
 ### Implementation
+
+The implementation involves creating Kafka and MQTT connectors, configuring LNM to expose the MQTT Broker, and updating DNS definitions. It also includes steps for importing and exporting root CA certificates and setting up MQTT Bridge and Topic Mapper configurations.
 
 #### Layer 4
 
@@ -444,7 +445,7 @@ spec:
     - direction: remote-to-local
       name: feedback-data-from-l4-to-site1
       qos: 1
-      source: enterprise/feedback/site1
+      source: enterprise/feedback
       target: feedback
       sharedSubscription:
         groupMinimumShareNumber: 1
@@ -458,6 +459,8 @@ With:
 > NB: Shared subscriptions help Azure IoT MQ create more clients for the MQTT bridge. You can set up a different shared subscription for each route. Azure IoT MQ subscribes to messages from the source topic and sends them to one client at a time using round robin. Then, the client publishes the messages to the bridged broker.
 
 ### Testing
+
+Testing involves message duplication from Level 3 to Level 4 and vice versa, as well as message duplication from the Kafka Broker to Level 3.
 
 #### Message duplication from L3 to L4
 
@@ -530,9 +533,10 @@ Deploy the MQTT Client container and run the `mqttui` tool
 
 - Deploy non-TLS MQTT Broker Listener  
 - Expose the MQTT service port locally
-- Publish message to the `enterprise/feedback` topic
 
-Then, in the L3 `mqttui` tool, you will see the message coming from L4 to the topic `incoming-feedback`.
+#### Message duplication from Kafka Broker to L3
+
+When a message is inserted into the `feedback` topic in the Kafka Broker, the Kafka Connector replicates it to the L4 MQTT broker. The MQTT Bridge detects the message in L4 and duplicates it to the `enterprise/feedback` topic in L3. Finally, the message appears in the L3 `mqttui` tool under the `incoming-feedback` topic.
 
 ## Additional links
 
