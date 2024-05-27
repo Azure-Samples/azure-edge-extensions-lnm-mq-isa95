@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  log.override: |
+    log
+  custom.server: |
+    aio-mq-dmqtt-frontend.contoso-corp.com:53 {
+      hosts {
+        10.43.136.72 aio-mq-dmqtt-frontend.contoso-corp.com
+        fallthrough
+      }
+    }

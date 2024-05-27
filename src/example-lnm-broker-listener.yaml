@@ -1,0 +1,26 @@
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: BrokerListener
+metadata:
+  name: listener
+  namespace: azure-iot-operations
+spec:
+  brokerRef: broker
+  authenticationEnabled: false
+  authorizationEnabled: false
+  port: 8883
+  serviceName: aio-mq-dmqtt-frontend
+  serviceType: clusterIp
+  tls:
+    automatic:
+      issuerRef:
+        group: cert-manager.io
+        kind: Issuer
+        name: mq-dmqtt-frontend
+      san:
+        dns:
+        # list the domain names that can be used while trying 
+        # to reach the `aio-mq-dmqtt-frontend` service
+        - aio-mq-dmqtt-frontend.contoso-corp.com
+        - aio-mq-dmqtt-frontend.azure-iot-operations.svc.cluster.local
+        - aio-mq-dmqtt-frontend.azure-iot-operations
+        ip: ["10.43.139.62"] # The lnm-level-4 service Cluster-IP address

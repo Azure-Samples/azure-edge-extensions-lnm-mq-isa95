@@ -1,0 +1,18 @@
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: KafkaConnectorTopicMap
+metadata:
+  name: my-eh-topic-map
+  namespace: azure-iot-operations
+spec:
+  kafkaConnectorRef: my-eh-connector
+  routes:
+    # Pull from kafka topic "feedback" and publish to MQTT topic "enterprise/feedback"
+    - kafkaToMqtt:
+        name: "route1"
+        consumerGroupId: mqConnector
+        kafkaTopic: feedback
+        mqttTopic: enterprise/feedback
+        qos: 1
+        sharedSubscription:
+          groupName: group1
+          groupMinimumShareNumber: 3

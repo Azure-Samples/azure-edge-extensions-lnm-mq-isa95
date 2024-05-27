@@ -54,6 +54,10 @@ The full scenario covered in this sample is described in this sequence diagram:
 This sample requires:
 
 - Azure IoT Operations installed on an ISA-95 architecture. The full installation guideline is [available here](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-configure-aks-edge-essentials-layered-network).
+- Azure IoT Operations Layer Network Management installed & configured:
+  - [Configure Azure IoT Layered Network Management Preview to Arc-enable a cluster in Azure environment](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-deploy-aks-layered-network)
+  - [Configure Azure IoT Layered Network Management Preview on level 4 cluster](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-configure-l4-cluster-layered-network?tabs=k3s)
+  - [Configure level 3 cluster in an isolated network with Azure IoT Layered Network Management Preview](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-configure-l3-cluster-layered-network?tabs=k3s)
 - Access to a Kafka Broker with URL and SASL Plain credentials.
 
 ### Implementation
@@ -70,9 +74,10 @@ In the Layer 4, we need to:
 
 ##### Creating the Kafka Connector
 
-Azure IoT Operations MQ come with a dedicated component for duplicating data between a Kafka Broker and the AIO MQ instance. Typically our Kafka Connector will look like:
+Azure IoT Operations MQ come with a dedicated component for duplicating data between a Kafka Broker and the AIO MQ instance. Typically our [Kafka Connector YAML definition](./src/kafka-connector.yaml) will look like:
 
 ```yaml
+# file src/kafka-connector.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: KafkaConnector
 metadata:
@@ -105,6 +110,12 @@ spec:
       kubernetes: {}
 ```
 
+Import it to Kubernetes using the command:
+
+```bash
+kubectl apply -f src/kafka-connector.yaml
+```
+
 This YAML defines a KafkaConnector in Azure IoT Operations to bridge data between Azure IoT MQ MQTT topics and an external Kafka broker. It sets up secure connections to both the Kafka broker and the local Azure IoT MQ MQTT broker. Authentication is handled via SASL PLAIN for Kafka and Kubernetes-based for MQTT.
 
 This YAML example requires that the authentication credentials needs to be stored inside a Kubernetes secret, called `cs-secret`:
@@ -115,13 +126,14 @@ kubectl create secret generic cs-secret -n azure-iot-operations \
   --from-literal=password='KAFKA_PASSWORD'
 ```
 
-##### Creating the Kafka Connector Topic Map 
+##### Creating the Kafka Connector Topic Map
 
 The KafkaConnectorTopicMap custom resource (CR) allows you to define the mapping between MQTT topics and Kafka topics for a possible bi-directional data transfer.
 
-The scenario covered in this sample can be implemented using this YAML:
+The scenario covered in this sample can be implemented using [this YAML](./src/kafka-topic-map.yaml):
 
 ```yaml
+# file src/kafka-topic-map.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: KafkaConnectorTopicMap
 metadata:
@@ -200,9 +212,10 @@ We need to take note of the `CLUSTER-IP` of the:
 - `aio-mq-dmqtt-frontend` service, in this example it's: `10.43.18.50`.
 - `lnm-level-4` service, in this example it's: `10.43.139.62`.
 
-Here we need to add the `aio-mq-dmqtt-frontend` domain name. The updated `brokerlistener.yaml` file looks like:
+Here we need to add the `aio-mq-dmqtt-frontend` domain name. The updated `brokerlistener.yaml` [file](./src/example-lnm-broker-listener.yaml) looks like:
 
 ```yaml
+# file src/example-lnm-broker-listener.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: BrokerListener
 metadata:
@@ -210,7 +223,7 @@ metadata:
   namespace: azure-iot-operations
 spec:
   brokerRef: broker
-  authenticationEnabled: true
+  authenticationEnabled: false
   authorizationEnabled: false
   port: 8883
   serviceName: aio-mq-dmqtt-frontend
@@ -317,9 +330,10 @@ You will notice that the port `8883` gets added to the available ports in the `l
 
 Then we need to add the `aio-mq-dmqtt-frontend.contoso-corp.com` domain name to the L4 K8s CoreDNS definitions. We need to create an override ConfigMap to the CoreDNS default one:
 
-Create a file called `coredns-custom.yaml` that has this content:
+Create a [file called `coredns-custom.yaml`](./src/coredns-custom.yaml) that has this content:
 
 ```yaml
+# file src/coredns-custom.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -381,13 +395,13 @@ kubectl create cm ca-cert-configmap --from-file=ca.crt=Certificate.crt -n azure-
 
 ##### Create the MQTT Bridge Connector
 
-The MQTT Bridge definition looks like:
+The [MQTT Bridge YAML definition](./src/mqtt-bridge-connector.yaml) looks like:
 
 ```yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: MqttBridgeConnector
 metadata:
-  name: site1-mqtt-bridge
+  name: node1-site1-mqtt-bridge
   namespace: azure-iot-operations
 spec:
   image: 
@@ -396,7 +410,7 @@ spec:
     pullPolicy: IfNotPresent
   protocol: v5
   bridgeInstances: 1
-  clientIdPrefix: site1-L4-gateway-
+  clientIdPrefix: node1-site1-L4-gateway-
   logLevel: debug
   remoteBrokerConnection:
     endpoint: aio-mq-dmqtt-frontend.contoso-corp.com:8883
@@ -417,19 +431,20 @@ spec:
 
 With:
 
-- The `metadata.name` and `clientIdPrefix` values contains the current site name (`site1`), to ensure uniqueness.
+- The `metadata.name` and `clientIdPrefix` values contains the current site name (`site1`) and current node name (`node1`), to ensure uniqueness.
 
 > NB: Azure IoT MQ generates a client ID for each `MqttBridgeConnector` client, using a prefix that you specify, in the format of `{clientIdPrefix}-{routeName}`. **This client ID is important for Azure IoT MQ to mitigate message loss and avoid conflicts or collisions with existing client IDs since MQTT specification allows only one connection per client ID**.
 
 ##### Create the MQTT Topic Mapper
 
-The MQTT Topic Mapper looks like:
+The [MQTT Topic Mapper YAML file](./src/mqtt-bridge-topic-map.yaml) looks like:
 
 ```yaml
+# file src/mqtt-bridge-topic-map.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: MqttBridgeTopicMap
 metadata:
-  name: site1-topic-map
+  name: node1-site1-topic-map
   namespace: azure-iot-operations
 spec:
   mqttBridgeConnectorRef: site1-mqtt-bridge
@@ -438,23 +453,23 @@ spec:
       name: site1-to-l4
       qos: 1
       source: data
-      target: data/site1
+      target: enterprise/site1/node1
       sharedSubscription:
         groupMinimumShareNumber: 1
-        groupName: "site1-to-l4-group"
+        groupName: "node1-site1-to-l4-group"
     - direction: remote-to-local
-      name: feedback-data-from-l4-to-site1
+      name: feedback-data-from-l4-to-l3
       qos: 1
       source: enterprise/feedback
-      target: feedback
+      target: incoming-feedback
       sharedSubscription:
         groupMinimumShareNumber: 1
-        groupName: "feedback-data-from-l4-to-site1-group"
+        groupName: "feedback-data-from-l4-to-node1-site1-group"
 ```
 
 With:
 
-- The `metadata.name` and `spec.routes.[].sharedSubscription.groupName` values contains the current site name (`site1`), to ensure uniqueness.
+- The `metadata.name` and `spec.routes.[].sharedSubscription.groupName` values contains the current site name (`site1`) and current node name (`node1`), to ensure uniqueness.
 
 > NB: Shared subscriptions help Azure IoT MQ create more clients for the MQTT bridge. You can set up a different shared subscription for each route. Azure IoT MQ subscribes to messages from the source topic and sends them to one client at a time using round robin. Then, the client publishes the messages to the bridged broker.
 
@@ -488,9 +503,10 @@ mqttui -b mqtts://aio-mq-dmqtt-frontend:8883 -u '$sat' --password $(cat /var/run
 
 ##### In the Layer 3
 
-Start by deploying a non-TLS MQTT Broker Listener:
+Start by deploying a [non-TLS MQTT Broker Listener](./src/non-tls-mqtt-broker-listener.yaml):
 
 ```yaml
+# file src/non-tls-mqtt-broker-listener.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: BrokerListener
 metadata:
@@ -505,16 +521,22 @@ spec:
   serviceType: clusterIp
 ```
 
+Import it to Kubernetes using:
+
+```bash
+kubectl apply -f src/non-tls-mqtt-broker-listener.yaml
+```
+
 Expose the L3 MQTT Service from the Kubernetes cluster to the `localhost`:
 
 ```bash
 kubectl port-forward service/aio-mq-dmqtt-frontend 12345:1883 -n azure-iot-operations
 ```
 
-Then using the Eclipse Mosquitto cli (or any MQTT Client Tool) publish a message to the `local-data` topic:
+Then using the Eclipse Mosquitto cli (or any MQTT Client Tool) publish a message to the `data` topic:
 
 ```bash
-mosquitto_pub -d -h localhost -p 12345 -i "l3-client" -t "local-data" -m "Hello from L3"
+mosquitto_pub -d -h localhost -p 12345 -i "l3-client" -t "data" -m "Hello from L3"
 ```
 
 Then in the L4 MQTTUI tool you will see the `Hello from L3` message appearing in the L4 `enterprise/site1/node1` topic:
