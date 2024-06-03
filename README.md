@@ -541,7 +541,7 @@ mosquitto_pub -d -h localhost -p 12345 -i "l3-client" -t "data" -m "Hello from L
 
 Then in the L4 MQTTUI tool you will see the `Hello from L3` message appearing in the L4 `enterprise/site1/node1` topic:
 
-![L3 message appearing in the L4 MQTT Broker](./imgs/mqtt-bridge-l4-msg-output.png)
+![L3 message appearing in the L4 MQTT Broker](./img/mqtt-bridge-l4-msg-output.png)
 
 #### Message duplication from L4 to L3
 
