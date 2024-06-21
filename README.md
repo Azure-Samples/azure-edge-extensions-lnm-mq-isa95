@@ -23,27 +23,27 @@ The ISA-95 standard is structured into distinct levels:
 
 <u>**Example**: Contoso Company Implementation</u>
 
-Contoso, a global manufacturing company, has implemented ISA-95 using Azure IoT Operations. Their architecture aligns with the ISA-95 levels:
+Contoso, a global manufacturing company, has implemented ISA-95 using Azure IoT Operations (AIO). Their architecture aligns with the ISA-95 levels:
 
 - **Level 5 (Global Corporation)**: Data aggregation, analysis, forecasting, and business decision-making. Some data from this layer is made available in lower layers, like Level 3, for immediate action.
 - **Level 4 (Regional Management)**: Regional production planning and coordination.
-- **Levels 2 & 3 (Site Operations)**: Azure IoT Edge devices collect and aggregate data from local sensors and machines, storing it in the local MQ Broker. This data is also sent to Level 5 for business purposes.
+- **Levels 2 & 3 (Site Operations)**: Edge based Arc enabled Kubernetes cluster collect and aggregate data from local sensors and machines, storing it in the local MQ Broker. This data is also sent to Level 5 for business purposes.
 
-Azure IoT Operations includes the Azure IoT MQ, a scalable, Kubernetes-native MQTT Broker that provides the messaging plane for event-driven applications.
+Azure IoT Operations includes the [Azure IoT MQ](https://learn.microsoft.com/azure/iot-operations/manage-mqtt-connectivity/overview-iot-mq), a scalable, Kubernetes-native MQTT Broker that provides the messaging plane for event-driven applications.
 
-Contoso uses Azure IoT MQ as an MQTT Broker and relies on the MQTT Bridge component to duplicate MQTT data between brokers in different layers.
+Contoso uses Azure IoT MQ as an MQTT Broker and relies on the [MQTT Bridge](https://learn.microsoft.com/azure/iot-operations/connect-to-cloud/howto-configure-mqtt-bridge) component to duplicate MQTT data between brokers in different layers.
 
-Contoso has an additional requirement: a Kafka Broker in another cloud stores business decisions that need to be applied to production lines. This data needs to reach Layers 2 & 3.
+Contoso has an additional requirement: a Kafka broker in another cloud stores business decisions that need to be applied to production lines. This data needs to reach Layers 2 & 3.
 
 ## Scenario
 
 ### Kafka Bridging scenario
 
-A Kafka Connector component from AIO MQ grabs business decisions from the Kafka Broker and makes them available in the `enterprise/feedback` topic on the Level 4 MQTT Broker for later use by the MQTT Bridge.
+A [KafkaConnector](https://learn.microsoft.com/azure/iot-operations/connect-to-cloud/howto-configure-kafka) component from Azure IoT MQ grabs business decisions from the Kafka broker and makes them available in the `enterprise/feedback/siteX` topics on the Level 4 MQTT Broker for later use by the MQTT Bridge.
 
 ### MQTT Bridging scenario
 
-MQTT Bridge duplicates messages between the Level 3 and Level 4 brokers. When a message is published to the `node1` topic in the Level 3 MQTT Broker, it's duplicated to `enterprise/site1/node1` in the Level 4 MQTT Broker. Messages inserted into `enterprise/feedback` in the Level 4 broker are duplicated to `incoming-feedback` in the Level 3 broker.
+MQTT Bridge duplicates messages between the Level 3 and Level 4 brokers. When a message is published to the `node1` topic in the Level 3 MQTT Broker, it's duplicated to `enterprise/site1/node1` in the Level 4 MQTT Broker. Messages inserted into `enterprise/feedback/siteX` in the Level 4 broker are duplicated to `incoming-feedback` in each respective Layer 3 site.
 
 The full scenario covered in this sample is described in this sequence diagram:
 
@@ -58,105 +58,22 @@ This sample requires:
   - [Configure Azure IoT Layered Network Management Preview to Arc-enable a cluster in Azure environment](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-deploy-aks-layered-network)
   - [Configure Azure IoT Layered Network Management Preview on level 4 cluster](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-configure-l4-cluster-layered-network?tabs=k3s)
   - [Configure level 3 cluster in an isolated network with Azure IoT Layered Network Management Preview](https://learn.microsoft.com/en-us/azure/iot-operations/manage-layered-network/howto-configure-l3-cluster-layered-network?tabs=k3s)
-- Access to a Kafka Broker with URL and SASL Plain credentials.
+- Access to a Kafka Broker with URL and SASL Plain credentials. This is can be an Azure EventHubs or any compliant Apache Kafka endpoint.
 
 ### Implementation
 
-The implementation involves creating Kafka and MQTT connectors, configuring LNM to expose the MQTT Broker, and updating DNS definitions. It also includes steps for importing and exporting root CA certificates and setting up MQTT Bridge and Topic Mapper configurations.
+The implementation involves creating Kafka and MQTT connectors, configuring Layered Network Management (LNM) to expose the MQTT Broker, and updating DNS definitions. It also includes steps for importing and exporting root CA certificates and setting up MQTT Bridge and Topic Mapper configurations.
 
 #### Layer 4
 
 In the Layer 4, we need to:
 
-- Create the Kafka Connector and the Kafka Topic Mapper
 - Configure the LNM to expose the MQTT Broker
 - In the LNM DNS definition, add a custom domain name for the MQTT Front-End Service. We will use the custom domain `aio-mq-dmqtt-frontend.contoso-corp.com` for accessing the L4 MQTT Broker from the L3 Layer.
 
-##### Creating the Kafka Connector
-
-Azure IoT Operations MQ come with a dedicated component for duplicating data between a Kafka Broker and the AIO MQ instance. Typically our [Kafka Connector YAML definition](./src/kafka-connector.yaml) will look like:
-
-```yaml
-# file src/kafka-connector.yaml
-apiVersion: mq.iotoperations.azure.com/v1beta1
-kind: KafkaConnector
-metadata:
-  name: my-eh-connector
-  namespace: azure-iot-operations
-spec:
-  image:
-    pullPolicy: IfNotPresent
-    repository: mcr.microsoft.com/azureiotoperations/kafka
-    tag: 0.4.0-preview
-  instances: 1
-  clientIdPrefix: my-prefix
-  kafkaConnection:
-    endpoint: KAFKA_BROKER_URL:9093
-    tls:
-      tlsEnabled: true
-    authentication:
-      enabled: true
-      authType:
-        sasl:
-          saslType: plain
-          token:
-            secretName: cs-secret
-  localBrokerConnection:
-    endpoint: "aio-mq-dmqtt-frontend:8883"
-    tls:
-      tlsEnabled: true
-      trustedCaCertificateConfigMap: "aio-ca-trust-bundle-test-only"
-    authentication:
-      kubernetes: {}
-```
-
-Import it to Kubernetes using the command:
-
-```bash
-kubectl apply -f src/kafka-connector.yaml
-```
-
-This YAML defines a KafkaConnector in Azure IoT Operations to bridge data between Azure IoT MQ MQTT topics and an external Kafka broker. It sets up secure connections to both the Kafka broker and the local Azure IoT MQ MQTT broker. Authentication is handled via SASL PLAIN for Kafka and Kubernetes-based for MQTT.
-
-This YAML example requires that the authentication credentials needs to be stored inside a Kubernetes secret, called `cs-secret`:
-
-```bash
-kubectl create secret generic cs-secret -n azure-iot-operations \
-  --from-literal=username='KAFKA_USERNAME' \
-  --from-literal=password='KAFKA_PASSWORD'
-```
-
-##### Creating the Kafka Connector Topic Map
-
-The KafkaConnectorTopicMap custom resource (CR) allows you to define the mapping between MQTT topics and Kafka topics for a possible bi-directional data transfer.
-
-The scenario covered in this sample can be implemented using [this YAML](./src/kafka-topic-map.yaml):
-
-```yaml
-# file src/kafka-topic-map.yaml
-apiVersion: mq.iotoperations.azure.com/v1beta1
-kind: KafkaConnectorTopicMap
-metadata:
-  name: my-eh-topic-map
-  namespace: azure-iot-operations
-spec:
-  kafkaConnectorRef: my-eh-connector
-  routes:
-    # Pull from kafka topic "feedback" and publish to MQTT topic "enterprise/feedback"
-    - kafkaToMqtt:
-        name: "route1"
-        consumerGroupId: mqConnector
-        kafkaTopic: feedback
-        mqttTopic: enterprise/feedback
-        qos: 1
-        sharedSubscription:
-          groupName: group1
-          groupMinimumShareNumber: 3
-```
-
 ##### Updating the Default BrokerListener
 
-Inside Azure IOT Operations, the MQTT is deployed using many CRDs (custom resource definitions) and Kubernetes objects. The first component that we need to update is the "BrokerListener": component responsible for handling incoming MQTT Broker requests.
+Inside Azure IOT Operations, the MQTT is deployed using many CRDs (custom resource definitions) and Kubernetes objects. The first component that we need to update is the "BrokerListener": component responsible for handling incoming MQTT requests.
 
 When you deploy Azure IoT Operations Preview, the deployment also creates a BrokerListener resource named `listener` in the `azure-iot-operations` namespace. This listener is linked to the default Broker resource named `broker` that's also created during deployment. The default listener exposes the broker on port `8883` with TLS and SAT authentication enabled. The TLS certificate is automatically managed by `cert-manager`. Authorization is disabled by default.
 
@@ -395,9 +312,10 @@ kubectl create cm ca-cert-configmap --from-file=ca.crt=Certificate.crt -n azure-
 
 ##### Create the MQTT Bridge Connector
 
-The [MQTT Bridge YAML definition](./src/mqtt-bridge-connector.yaml) looks like:
+The [MQTT Bridge YAML definition](./src/l3-mqtt-bridge-connector.yaml) looks like:
 
 ```yaml
+# file src/l3-mqtt-bridge-connector.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: MqttBridgeConnector
 metadata:
@@ -437,10 +355,10 @@ With:
 
 ##### Create the MQTT Topic Mapper
 
-The [MQTT Topic Mapper YAML file](./src/mqtt-bridge-topic-map.yaml) looks like:
+The [MQTT Topic Mapper YAML file](./src/l3-mqtt-bridge-topic-map.yaml) looks like:
 
 ```yaml
-# file src/mqtt-bridge-topic-map.yaml
+# file src/l3-mqtt-bridge-topic-map.yaml
 apiVersion: mq.iotoperations.azure.com/v1beta1
 kind: MqttBridgeTopicMap
 metadata:
@@ -460,7 +378,7 @@ spec:
     - direction: remote-to-local
       name: feedback-data-from-l4-to-l3
       qos: 1
-      source: enterprise/feedback
+      source: enterprise/feedback/site1
       target: incoming-feedback
       sharedSubscription:
         groupMinimumShareNumber: 1
@@ -472,6 +390,173 @@ With:
 - The `metadata.name` and `spec.routes.[].sharedSubscription.groupName` values contains the current site name (`site1`) and current node name (`node1`), to ensure uniqueness.
 
 > NB: Shared subscriptions help Azure IoT MQ create more clients for the MQTT bridge. You can set up a different shared subscription for each route. Azure IoT MQ subscribes to messages from the source topic and sends them to one client at a time using round robin. Then, the client publishes the messages to the bridged broker.
+
+#### Back to Layer 4
+
+After establishing the MQTT Bridge in Layer 3, we need to configure a corresponding MQTT Bridge in Layer 4 to facilitate data transfer between layers:
+
+* Duplicate incoming data from Layer 3 (using the L3 MQTT Bridge) and transmit it to Layer 5.
+* Duplicate incoming data received from Layer 5 (via the L4 Kafka Connector) and make it accessible in Layer 3.
+
+#### Duplicating Layer 3 data to Layer 5
+
+At this stage, data collected from Layer 3 devices is accessible within the Layer 4 MQTT broker. In a practical scenario, numerous Layer 3 sites within Contoso will store data in their respective regional Layer 4 hubs. Subsequently, these regional Layer 4 centers need to transmit this data to the central Layer 5 site. 
+
+For Contoso, this Layer 5 MQTT Broker is implemented as an Azure Event Grid.
+
+To create the MQTT Bridge in Layer 4, we'll use the [following `MqttBridgeConnector` configuration](./src/l4-mqtt-bridge-connector.yaml):
+
+```yaml
+# file src/l4-mqtt-bridge-connector.yaml
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: MqttBridgeConnector
+metadata:
+  name: l4-hub1-to-l5-mqtt-bridge
+  namespace: azure-iot-operations
+spec:
+  image: 
+    repository: mcr.microsoft.com/azureiotoperations/mqttbridge 
+    tag: 0.4.0-preview
+    pullPolicy: IfNotPresent
+  protocol: v5
+  bridgeInstances: 2
+  clientIdPrefix: l4-hub1-to-l5-gateway-
+  logLevel: debug
+  remoteBrokerConnection:
+    endpoint: contoso-example.region-1.ts.eventgrid.azure.net:8883
+    tls:
+      tlsEnabled: true
+    authentication:
+      systemAssignedManagedIdentity:
+        audience: https://eventgrid.azure.net
+  localBrokerConnection:
+    endpoint: aio-mq-dmqtt-frontend:8883
+    tls:
+      tlsEnabled: true
+      trustedCaCertificateConfigMap: aio-ca-trust-bundle-test-only
+    authentication:
+      kubernetes: {}
+```
+
+This MQTT Bridge connects to the local MQTT Broker (in L4) and "remotely" to the Contoso Azure Event Grid namespace. The `remoteBrokerConnection` uses managed identity to simplify authentication. To learn more about managed identity, check this post:: [Tutorial: Configure MQTT bridge between Azure IoT MQ Preview and Azure Event Grid](https://learn.microsoft.com/en-us/azure/iot-operations/connect-to-cloud/tutorial-connect-event-grid)
+
+Now, we need to create the [`MqttBridgeTopicMap`](./src/l4-mqtt-bridge-topic-map.yaml), which defines how data is duplicated:
+
+```yaml
+# file src/l4-mqtt-bridge-topic-map.yaml
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: MqttBridgeTopicMap
+metadata:
+  name: l4-hub1-topic-map
+  namespace: azure-iot-operations
+spec:
+  mqttBridgeConnectorRef: l4-hub1-to-l5-mqtt-bridge
+  routes:
+    - direction: local-to-remote
+      name: l4-to-l5
+      qos: 1
+      source: enterprise/#
+      sharedSubscription:
+        groupMinimumShareNumber: 1
+        groupName: "l4-to-l5-group"
+```
+
+In the route `l4-to-l5`, we specify the `source` field without a specific `target`. This means that messages will be duplicated to Azure Event Grid topics with the same name as their origin topic in Layer 4. For example, if the message being duplicated is already stored in the `enterprise/site1/node1` topic in L4, then it will be duplicated to the `enterprise/site1/node1` topic in the Azure Event Grid namespace. This approach is especially valuable when dealing with numerous sites and hubs, as it avoids the tedious and time-consuming process of referencing each one individually.
+
+#### Duplicating Layer 5 data to Layer 3
+
+At this stage, all data from different sites and hubs is consolidated in Layer 5. Contoso managers can then analyze the collected data using Microsoft Fabric or any BI tool to make informed decisions as needed. For example, consider a scenario where production at a specific site needs to be adjusted (increased or decreased). Based on Layer 3 data inputs, we could envision a trigger in Microsoft Fabric that would emit a production change decision to a Kafka Broker. In our scenario, the Kafka topic where the decision will be inserted in topic with format `feedback/site1`. This format along with the MQTT Bridge topics wildcards, will enable each site to retrieve its relevant decisions without being burdened with unrelated information.
+
+To make this happen, we need to follow this steps:
+
+- Creating the Kafka Connector
+- Creating the Kafka Connector Topic Map
+
+##### Creating the Kafka Connector
+
+Azure IoT MQ comes with a dedicated component for duplicating data between a Kafka Broker and the AIO MQ instance. Typically our [Kafka Connector YAML definition](./src/kafka-connector.yaml) will look like:
+
+```yaml
+# file src/kafka-connector.yaml
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: KafkaConnector
+metadata:
+  name: my-eh-connector
+  namespace: azure-iot-operations
+spec:
+  image:
+    pullPolicy: IfNotPresent
+    repository: mcr.microsoft.com/azureiotoperations/kafka
+    tag: 0.4.0-preview
+  instances: 1
+  clientIdPrefix: my-prefix
+  kafkaConnection:
+    endpoint: KAFKA_BROKER_URL:9093
+    tls:
+      tlsEnabled: true
+    authentication:
+      enabled: true
+      authType:
+        sasl:
+          saslType: plain
+          token:
+            secretName: cs-secret
+  localBrokerConnection:
+    endpoint: "aio-mq-dmqtt-frontend:8883"
+    tls:
+      tlsEnabled: true
+      trustedCaCertificateConfigMap: "aio-ca-trust-bundle-test-only"
+    authentication:
+      kubernetes: {}
+```
+
+Import it to Kubernetes using the command:
+
+```bash
+kubectl apply -f src/kafka-connector.yaml
+```
+
+This YAML defines a KafkaConnector in Azure IoT Operations to bridge data between Azure IoT MQ MQTT topics and an external Kafka broker. It sets up secure connections to both the Kafka broker and the local Azure IoT MQ MQTT broker. Authentication is handled via SASL PLAIN for Kafka and Kubernetes-based for MQTT.
+
+This YAML example requires that the authentication credentials needs to be stored inside a Kubernetes secret, called `cs-secret`:
+
+```bash
+kubectl create secret generic cs-secret -n azure-iot-operations \
+  --from-literal=username='KAFKA_USERNAME' \
+  --from-literal=password='KAFKA_PASSWORD'
+```
+
+##### Creating the Kafka Connector Topic Map
+
+The `KafkaConnectorTopicMap` custom resource (CR) allows you to define the mapping between MQTT topics and Kafka topics for a possible bi-directional data transfer.
+
+Let's imagine that the Kafka topic where the data will be inserted in topic with format `feedback/siteX`. This format along with the MQTT Bridge topics wildcards, will enable each site to retrieve its relevant decisions without being burdened with unrelated information.
+
+The scenario covered in this sample can be implemented using [this YAML](./src/kafka-topic-map.yaml):
+
+```yaml
+# file src/kafka-topic-map.yaml
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: KafkaConnectorTopicMap
+metadata:
+  name: my-eh-topic-map
+  namespace: azure-iot-operations
+spec:
+  kafkaConnectorRef: my-eh-connector
+  routes:
+    # Pull from kafka topic "feedback/siteX" and publish to MQTT topic "enterprise/feedback/siteX"
+    - kafkaToMqtt:
+        name: "route1"
+        consumerGroupId: mqConnector
+        kafkaTopic: feedback/siteX
+        mqttTopic: enterprise/feedback/siteX
+        qos: 1
+        sharedSubscription:
+          groupName: group1
+          groupMinimumShareNumber: 3
+```
+
+The Kafka Connector then will bring all decisions messages stored in the L5 Kafka Broker in the L4 MQTT Broker. Then the L3 MQTT Bridges will be aware of these messages, and then, each one will retrieve the corresponding decisions for its site.
 
 ### Testing
 
@@ -558,10 +643,11 @@ Deploy the MQTT Client container and run the `mqttui` tool
 
 #### Message duplication from Kafka Broker to L3
 
-When a message is inserted into the `feedback` topic in the Kafka Broker, the Kafka Connector replicates it to the L4 MQTT broker. The MQTT Bridge detects the message in L4 and duplicates it to the `enterprise/feedback` topic in L3. Finally, the message appears in the L3 `mqttui` tool under the `incoming-feedback` topic.
+When a message is inserted into the `feedback/site1` topic in the Kafka Broker, the Kafka Connector replicates it to the L4 MQTT broker. The L3 MQTT Bridge detects the message in L4 and duplicates it from the `enterprise/feedback/site1` topic in L4, to the `incoming-feedback` topic in L3.
 
 ## Additional links
 
 - [Secure Azure IoT MQ Preview communication using BrokerListener](https://learn.microsoft.com/en-us/azure/iot-operations/manage-mqtt-connectivity/howto-configure-brokerlistener)
 - [Connect Azure IoT MQ Preview MQTT bridge cloud connector to other MQTT brokers](https://learn.microsoft.com/en-us/azure/iot-operations/connect-to-cloud/howto-configure-mqtt-bridge)
 - [Test connectivity to Azure IoT MQ Preview with MQTT clients](https://learn.microsoft.com/en-us/azure/iot-operations/manage-mqtt-connectivity/howto-test-connection)
+- [Configure MQTT bridge between Azure IoT MQ Preview and Azure Event Grid](https://learn.microsoft.com/en-us/azure/iot-operations/connect-to-cloud/tutorial-connect-event-grid)

@@ -6,12 +6,12 @@ metadata:
 spec:
   kafkaConnectorRef: my-eh-connector
   routes:
-    # Pull from kafka topic "feedback" and publish to MQTT topic "enterprise/feedback"
+    # Pull from kafka topic "feedback/siteX" and publish to MQTT topic "enterprise/feedback/siteX"
     - kafkaToMqtt:
         name: "route1"
         consumerGroupId: mqConnector
-        kafkaTopic: feedback
-        mqttTopic: enterprise/feedback
+        kafkaTopic: feedback/siteX
+        mqttTopic: enterprise/feedback/siteX
         qos: 1
         sharedSubscription:
           groupName: group1
