@@ -1,0 +1,15 @@
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: MqttBridgeTopicMap
+metadata:
+  name: l4-hub1-topic-map
+  namespace: azure-iot-operations
+spec:
+  mqttBridgeConnectorRef: l4-hub1-to-l5-mqtt-bridge
+  routes:
+    - direction: local-to-remote
+      name: l4-to-l5
+      qos: 1
+      source: enterprise/#
+      sharedSubscription:
+        groupMinimumShareNumber: 1
+        groupName: "l4-to-l5-group"

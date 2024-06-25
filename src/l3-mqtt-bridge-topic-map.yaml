@@ -1,0 +1,24 @@
+apiVersion: mq.iotoperations.azure.com/v1beta1
+kind: MqttBridgeTopicMap
+metadata:
+  name: node1-site1-topic-map
+  namespace: azure-iot-operations
+spec:
+  mqttBridgeConnectorRef: site1-mqtt-bridge
+  routes:
+    - direction: local-to-remote
+      name: site1-to-l4
+      qos: 1
+      source: data
+      target: enterprise/site1/node1
+      sharedSubscription:
+        groupMinimumShareNumber: 1
+        groupName: "node1-site1-to-l4-group"
+    - direction: remote-to-local
+      name: feedback-data-from-l4-to-l3
+      qos: 1
+      source: enterprise/feedback/site1
+      target: incoming-feedback
+      sharedSubscription:
+        groupMinimumShareNumber: 1
+        groupName: "feedback-data-from-l4-to-node1-site1-group"
