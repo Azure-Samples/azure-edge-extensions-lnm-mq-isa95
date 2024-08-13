@@ -2,6 +2,9 @@
 
 ISA-95, also known as ANSI/ISA-95, is an international standard developed by the International Society of Automation (ISA). It provides a framework for integrating enterprise systems (Level 4 and above) with industrial control systems (Levels 0-3). This standard aims to facilitate seamless communication and data exchange between different layers of the manufacturing hierarchy.
 
+> [!WARNING]
+This repo contains guidance using components of Azure IoT Operations PREVIEW, and could break with every new release. The current guidance and any samples apply to version [`v0.5.0-preview`](https://github.com/Azure/azure-iot-operations/releases/tag/v0.5.0-preview), there is no compatibility with other versions.
+
 **Objectives of ISA-95:**
 
 - Establish consistent terminology for clear communication between suppliers and manufacturers.
