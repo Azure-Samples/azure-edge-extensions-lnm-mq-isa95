@@ -1,0 +1,45 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "Ubuntu",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/base:jammy",
+	"features": {
+		"ghcr.io/devcontainers/features/azure-cli:1": {
+			"version": "2.64.0",
+			"extensions": "connectedk8s,k8s-extension,azure-iot-ops"
+		},
+		"ghcr.io/devcontainers/features/dotnet:2": {
+			"version": "8.0"
+		},
+		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+			"minikube": "none"
+		},
+		"ghcr.io/rio/features/k3d:1": {},
+		"ghcr.io/dapr/cli/dapr-cli:0": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+			"moby": false
+		}
+	},
+	"hostRequirements": {
+		"cpus": 4,
+		"memory": "8gb",
+		"storage": "32gb"
+	},
+	"postCreateCommand": "bash ./.devcontainer/postCreateCommand.sh",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-azuretools.vscode-bicep",
+				"davidanson.vscode-markdownlint",
+				"streetsidesoftware.code-spell-checker",
+				"ms-dotnettools.csdevkit",
+				"ms-azuretools.vscode-dapr",
+				"ms-kubernetes-tools.vscode-kubernetes-tools",
+				"EditorConfig.EditorConfig",
+				"ms-vscode.powershell",
+				"inercia.vscode-k3d"
+			]
+		}
+	}
+}
