@@ -1,7 +1,8 @@
 #! /bin/bash
 K3DCLUSTERNAME := devcluster
 K3DREGISTRYNAME := k3d-devregistry.localhost:5500
-PORTFORWARDING := -p '18883:18883@loadbalancer' -p '1883:1883@loadbalancer'
+PORTFORWARDING1 := -p '18883:18883@loadbalancer' -p '1883:1883@loadbalancer'
+PORTFORWARDING2 := -p '28883:18883@loadbalancer' -p '2883:1883@loadbalancer'
 ARCCLUSTERNAME := arc-mqtt-isa95
 STORAGEACCOUNTNAME := samqttisa95
 SCHEMAREGISTRYNAME := sr-mqtt-isa95
@@ -12,11 +13,19 @@ all: create_k3d_cluster_1 deploy_aio_1 deploy_opcplcsimulator deploy_mqttui
 
 create_k3d_cluster_1:
 	@echo "Creating k3d cluster..."
-	k3d cluster create $(K3DCLUSTERNAME)-1 $(PORTFORWARDING) --registry-use $(K3DREGISTRYNAME) --servers 1
+	k3d cluster create $(K3DCLUSTERNAME)-1 $(PORTFORWARDING1) --registry-use $(K3DREGISTRYNAME) --servers 1 --k3s-arg "--disable=traefik@server:0"
 
 deploy_aio_1:
 	@echo "Deploying AIO..."
 	bash ./infra/deploy-aio.sh $(ARCCLUSTERNAME)-1 $(STORAGEACCOUNTNAME)1 $(SCHEMAREGISTRYNAME)-1 $(RESOURCEGROUP)-1 $(LOCATION)
+
+create_k3d_cluster_2:
+	@echo "Creating k3d cluster..."
+	k3d cluster create $(K3DCLUSTERNAME)-2 $(PORTFORWARDING2) --registry-use $(K3DREGISTRYNAME) --servers 1 --k3s-arg "--disable=traefik@server:0"
+
+deploy_aio_2:
+	@echo "Deploying AIO..."
+	bash ./infra/deploy-aio.sh $(ARCCLUSTERNAME)-2 $(STORAGEACCOUNTNAME)2 $(SCHEMAREGISTRYNAME)-2 $(RESOURCEGROUP)-2 $(LOCATION)
 
 deploy_opcplcsimulator:
 	@echo "Deploying OPC PLC Simulator..."
@@ -28,5 +37,8 @@ deploy_mqttui:
 
 clean:
 	@echo "Cleaning up..."
-	k3d cluster delete $(K3DCLUSTERNAME)
-	az group delete -n $RESOURCEGROUP --yes
+	k3d cluster delete $(K3DCLUSTERNAME)-1
+	az group delete -n $(RESOURCEGROUP)-1 --yes
+	k3d cluster delete $(K3DCLUSTERNAME)-2
+	az group delete -n $(RESOURCEGROUP)-2 --yes
+
